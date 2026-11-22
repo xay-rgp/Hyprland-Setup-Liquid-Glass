@@ -106,7 +106,40 @@ log "Device profile set to: $DEVICE_PROFILE (saved to $PROFILE_FILE)"
 sudo -v
 ( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) &
 SUDO_KEEPALIVE_PID=$!
-trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
+QUICKSHELL_TMPDIR=""
+cleanup() {
+    kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    [[ -n "$QUICKSHELL_TMPDIR" && -d "$QUICKSHELL_TMPDIR" ]] && rm -rf -- "$QUICKSHELL_TMPDIR"
+}
+trap cleanup EXIT
+
+# Resolve the Quickshell source directory (supports uncompressed ./quickshell
+# or compressed ./quickshell.zip without dirtying the git checkout).
+QUICKSHELL_SRC=""
+if [[ -d "$SCRIPT_DIR/quickshell" ]]; then
+    QUICKSHELL_SRC="$SCRIPT_DIR/quickshell"
+elif [[ -f "$SCRIPT_DIR/quickshell.zip" ]]; then
+    log "Uncompressing quickshell.zip..."
+    QUICKSHELL_TMPDIR="$(mktemp -d)"
+    if command -v bsdtar >/dev/null 2>&1; then
+        bsdtar -xf "$SCRIPT_DIR/quickshell.zip" -C "$QUICKSHELL_TMPDIR"
+    elif command -v unzip >/dev/null 2>&1; then
+        unzip -q "$SCRIPT_DIR/quickshell.zip" -d "$QUICKSHELL_TMPDIR"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -m zipfile -e "$SCRIPT_DIR/quickshell.zip" "$QUICKSHELL_TMPDIR"
+    else
+        err "Cannot extract quickshell.zip: none of bsdtar, unzip, or python3 found."
+        exit 1
+    fi
+    if [[ -d "$QUICKSHELL_TMPDIR/quickshell" ]]; then
+        QUICKSHELL_SRC="$QUICKSHELL_TMPDIR/quickshell"
+    else
+        QUICKSHELL_SRC="$QUICKSHELL_TMPDIR"
+    fi
+else
+    err "Missing quickshell source: expected $SCRIPT_DIR/quickshell or $SCRIPT_DIR/quickshell.zip"
+    exit 1
+fi
 
 ### ---------------------------------------------------------------------
 ### 1. Enable multilib
@@ -125,7 +158,7 @@ sudo pacman -Syu --noconfirm
 ### ---------------------------------------------------------------------
 ### 2. Install official repo packages (noconfirm) - everything except steam
 ### ---------------------------------------------------------------------
-mapfile -t RAW_QUICKSHELL_PACKAGES < "$SCRIPT_DIR/quickshell/packages.txt"
+mapfile -t RAW_QUICKSHELL_PACKAGES < "$QUICKSHELL_SRC/packages.txt"
 QUICKSHELL_PACKAGES=()
 for pkg in "${RAW_QUICKSHELL_PACKAGES[@]}"; do
     [[ -z "$pkg" ]] && continue
@@ -250,7 +283,7 @@ copy_config "$SCRIPT_DIR/wofi-style.css"      "$HOME/.config/wofi/style.css"
 copy_config "$SCRIPT_DIR/wofi-config"         "$HOME/.config/wofi/config"
 copy_config "$SCRIPT_DIR/kitty.conf"          "$HOME/.config/kitty/kitty.conf"
 copy_config "$SCRIPT_DIR/fastfetch.jsonc"     "$HOME/.config/fastfetch/config.jsonc"
-copy_config_dir "$SCRIPT_DIR/quickshell"      "$HOME/.config/quickshell"
+copy_config_dir "$QUICKSHELL_SRC"             "$HOME/.config/quickshell"
 
 # Apply device profile (disable battery & brightness on desktop installs)
 if [[ "$DEVICE_PROFILE" == "desktop" ]]; then
