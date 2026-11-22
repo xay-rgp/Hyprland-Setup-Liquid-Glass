@@ -186,6 +186,7 @@ hl.window_rule({
     name = "kitty-no-maximize",
     match = { class = "^kitty$" },
     suppress_event = "maximize",
+    no_blur = true,
 })
 
 hl.window_rule({
@@ -194,4 +195,5 @@ hl.window_rule({
     rounding = 12,
     border_size = 0,
     no_shadow = true,
+    no_blur = true,
 })

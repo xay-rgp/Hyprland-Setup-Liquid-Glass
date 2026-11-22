@@ -228,10 +228,10 @@ yay -S --needed --noconfirm kew
 ### 5. Flatpak remote and applications
 ### ---------------------------------------------------------------------
 log "Setting up flathub remote..."
-sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
 log "Installing Mission Center from Flathub..."
-flatpak install --user --assumeyes flathub io.missioncenter.MissionCenter
+sudo flatpak install --system --assumeyes flathub io.missioncenter.MissionCenter
 
 ### ---------------------------------------------------------------------
 ### 6. Deploy Liquid Glass dotfiles (flat repo -> ~/.config/ subfolders)
@@ -357,6 +357,7 @@ hl.window_rule({
     name = "kitty-no-maximize",
     match = { class = "^kitty$" },
     suppress_event = "maximize",
+    no_blur = true,
 })
 LUA
     log "  Added Kitty maximize suppression rule."
