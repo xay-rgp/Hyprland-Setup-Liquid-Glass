@@ -198,8 +198,9 @@ PACMAN_PACKAGES=(
 log "Installing pacman packages: ${PACMAN_PACKAGES[*]}"
 sudo pacman -S --needed --noconfirm "${PACMAN_PACKAGES[@]}"
 
-log "Enabling NetworkManager and Bluetooth for subsequent boots..."
-sudo systemctl enable NetworkManager.service bluetooth.service
+log "Enabling NetworkManager, Bluetooth, and UDisks2 for subsequent boots..."
+sudo systemctl enable NetworkManager.service bluetooth.service udisks2.service
+systemctl --user enable hyprpolkitagent.service 2>/dev/null || true
 
 ### ---------------------------------------------------------------------
 ### 3. Install steam interactively so the vulkan driver provider prompt
@@ -366,7 +367,94 @@ LUA
 ensure_kitty_maximize_rule
 
 ### ---------------------------------------------------------------------
-### 7. Configure Fish shell
+### 7. Auto-mount secondary internal drives & show in Nautilus sidebar
+### ---------------------------------------------------------------------
+log "Checking for secondary internal Linux drives not yet in /etc/fstab..."
+mapfile -t NEW_FSTAB_DRIVES < <(
+    sudo lsblk -J -o NAME,TYPE,RM,FSTYPE,LABEL,UUID,MOUNTPOINT | python3 - <<'PY'
+import json, re, sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+try:
+    with open("/etc/fstab", "r", encoding="utf-8") as f:
+        fstab_text = f.read()
+except Exception:
+    fstab_text = ""
+
+used_mounts = set()
+for line in fstab_text.splitlines():
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    parts = stripped.split()
+    if len(parts) >= 2:
+        used_mounts.add(parts[1])
+
+def walk(devs):
+    for d in devs or []:
+        yield d
+        yield from walk(d.get("children"))
+
+for dev in walk(data.get("blockdevices")):
+    if dev.get("type") != "part":
+        continue
+    if dev.get("rm") in (True, 1, "1", "true"):
+        continue
+    fstype = dev.get("fstype") or ""
+    if fstype not in ("ext4", "btrfs", "xfs"):
+        continue
+    uuid = (dev.get("uuid") or "").strip()
+    if not uuid:
+        continue
+    mp = dev.get("mountpoint") or ""
+    if mp == "/" or mp.startswith("/boot") or mp == "[SWAP]":
+        continue
+    if f"UUID={uuid}" in fstab_text:
+        continue
+
+    raw_label = (dev.get("label") or "").strip()
+    safe_label = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_label).strip("._-")
+    if not safe_label:
+        safe_label = dev.get("name") or uuid[:8]
+
+    mount_point = f"/mnt/{safe_label}"
+    if mount_point in used_mounts:
+        mount_point = f"/mnt/{safe_label}-{uuid[:8]}"
+    used_mounts.add(mount_point)
+
+    print(f"{uuid}|{mount_point}|{fstype}")
+PY
+)
+
+if [[ ${#NEW_FSTAB_DRIVES[@]} -eq 0 ]]; then
+    log "  No unconfigured secondary internal drives found, skipping."
+else
+    for entry in "${NEW_FSTAB_DRIVES[@]}"; do
+        IFS='|' read -r drive_uuid drive_mp drive_fs <<< "$entry"
+        log "  Configuring auto-mount for UUID=$drive_uuid -> $drive_mp ($drive_fs)"
+        sudo mkdir -p "$drive_mp"
+        printf 'UUID=%s\t%s\t%s\tdefaults,nofail,x-gvfs-show\t0 2\n' \
+            "$drive_uuid" "$drive_mp" "$drive_fs" | sudo tee -a /etc/fstab >/dev/null
+    done
+
+    sudo systemctl daemon-reload
+
+    for entry in "${NEW_FSTAB_DRIVES[@]}"; do
+        IFS='|' read -r drive_uuid drive_mp _ <<< "$entry"
+        if ! findmnt -rn -S "UUID=$drive_uuid" >/dev/null 2>&1; then
+            sudo mount "$drive_mp" || warn "  Could not mount $drive_mp right now (it will mount on next boot)."
+        else
+            log "  UUID=$drive_uuid is already mounted; new mount point $drive_mp will take effect on next boot."
+        fi
+    done
+fi
+
+### ---------------------------------------------------------------------
+### 8. Configure Fish shell
 ### ---------------------------------------------------------------------
 FISH_CONFIG="$HOME/.config/fish/config.fish"
 mkdir -p "$(dirname "$FISH_CONFIG")"
