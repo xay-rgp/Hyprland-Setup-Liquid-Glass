@@ -42,8 +42,10 @@ local menu        = "wofi --show drun"
 ---- AUTOSTART ----
 -------------------
 hl.on("hyprland.start", function()
-    -- Import the display environment before starting the password prompt agent.
-    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && systemctl --user start hyprpolkitagent.service")
+    -- Import the display environment for user systemd + D-Bus services (gvfs, polkit)
+    -- before starting the password prompt agent, falling back to the binary directly
+    -- if the user systemd bus is unavailable.
+    hl.exec_cmd("(dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP; systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && systemctl --user start hyprpolkitagent.service) || /usr/lib/hyprpolkitagent/hyprpolkitagent")
     hl.exec_cmd("hyprpaper")
     hl.exec_cmd(os.getenv("HOME") .. "/.config/quickshell/run.sh -d")
 end)

@@ -199,8 +199,20 @@ log "Installing pacman packages: ${PACMAN_PACKAGES[*]}"
 sudo pacman -S --needed --noconfirm "${PACMAN_PACKAGES[@]}"
 
 log "Enabling NetworkManager, Bluetooth, and UDisks2 for subsequent boots..."
-sudo systemctl enable NetworkManager.service bluetooth.service udisks2.service
-systemctl --user enable hyprpolkitagent.service 2>/dev/null || true
+sudo systemctl enable --now NetworkManager.service bluetooth.service udisks2.service
+
+log "Ensuring user systemd manager and hyprpolkitagent are enabled..."
+USER_UID="$(id -u)"
+if ! systemctl is-active --quiet "user@${USER_UID}.service"; then
+    sudo systemctl restart "user@${USER_UID}.service" || warn "Could not start user@${USER_UID}.service."
+fi
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null || true
+    dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null || true
+    systemctl --user enable --now hyprpolkitagent.service 2>/dev/null || true
+else
+    systemctl --user enable hyprpolkitagent.service 2>/dev/null || true
+fi
 
 ### ---------------------------------------------------------------------
 ### 3. Install steam interactively so the vulkan driver provider prompt
