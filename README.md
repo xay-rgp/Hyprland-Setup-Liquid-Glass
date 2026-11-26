@@ -20,3 +20,8 @@ Arch Linux + Hyprland (Lua config) dotfiles replicating the **macOS 27 (Golden G
 chmod +x setup-hyprland.sh
 ./setup-hyprland.sh
 ```
+
+## Contributors
+
+- **xay-rgp** — Repository author & maintainer
+- **Antigravity (Google DeepMind)** — Contributor
